@@ -11,7 +11,7 @@ WORK_MINUTES = 25
 SHORT_BREAK_MINUTES = 5
 LONG_BREAK_MINUTES = 15
 SESSIONS_BEFORE_LONG_BREAK = 4
-VOLUME = 0.5
+VOLUME = 1
 SAMPLE_RATE = 48000
 LOOP_DURATION = 10
 STATS_FILE = "pomodoro_stats.json"
@@ -90,26 +90,40 @@ def generate_brown_noise_seamless(duration_sec):
 
 
 def countdown(minutes, label, play_sound=False):
-    total_seconds = minutes * 60
+    total_seconds = int(minutes * 60)
+    noise_data = generate_brown_noise_seamless(LOOP_DURATION) if play_sound else None
+
     if play_sound:
-        noise_data = generate_brown_noise_seamless(LOOP_DURATION)
         sd.play(noise_data, SAMPLE_RATE, loop=True)
 
-    try:
-        while total_seconds >= 0:
+    while total_seconds >= 0:
+        try:
             mins, secs = divmod(total_seconds, 60)
-            sys.stdout.write(f"\r[{label}] {mins:02d}:{secs:02d}  ")
+            sys.stdout.write(f"\r[{label}] {mins:02d}:{secs:02d} (Ctrl+C to Pause) ")
             sys.stdout.flush()
             time.sleep(1)
             total_seconds -= 1
-    except KeyboardInterrupt:
-        sd.stop()
-        print("\nStopped.")
-        sys.exit()
+        except KeyboardInterrupt:
+            sd.stop()
+            print(f"\n\n⏸️  PAUSED: [{label}]")
+            choice = input("Options: [R]esume, [S]kip, [Q]uit: ").lower()
+
+            if choice == "s":
+                print(f"Skipping {label}...")
+                return "skipped"
+            elif choice == "q":
+                print("Exiting...")
+                sys.exit()
+            else:
+                print(f"Resuming {label}...")
+                if play_sound:
+                    sd.play(noise_data, SAMPLE_RATE, loop=True)
+                continue
 
     sd.stop()
     print(f"\n🔔 {label} finished!")
     notify_gnome("Pomodoro", f"{label} finished!")
+    return "completed"
 
 
 def main():
@@ -122,22 +136,32 @@ def main():
     while True:
         session_count += 1
 
-        countdown(WORK_MINUTES, f"Focus Session {session_count}", play_sound=True)
-        stats.update(WORK_MINUTES, is_work=True)
-        stats.display_summary(session_count)
+        status = countdown(
+            WORK_MINUTES, f"Focus Session {session_count}", play_sound=True
+        )
+
+        if status == "completed":
+            stats.update(WORK_MINUTES, is_work=True)
+            stats.display_summary(session_count)
 
         if session_count % SESSIONS_BEFORE_LONG_BREAK == 0:
             b_min, b_lbl = LONG_BREAK_MINUTES, "Long Break"
         else:
             b_min, b_lbl = SHORT_BREAK_MINUTES, "Short Break"
 
-        input(f"Press Enter to start {b_lbl}...")
-        countdown(b_min, b_lbl, play_sound=False)
-        stats.update(b_min, is_work=False)
+        input(f"\nPress Enter to start {b_lbl} (or Ctrl+C to quit)...")
+
+        status = countdown(b_min, b_lbl, play_sound=False)
+        if status == "completed":
+            stats.update(b_min, is_work=False)
 
         print("\n" + "-" * 20)
         input("Break over! Press Enter for next Work Session...")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+        sys.exit()
