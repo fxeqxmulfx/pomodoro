@@ -383,7 +383,7 @@ def main() -> None:
     stats = StatsManager(STATS_FILE)
     session_count: int = 0
 
-    print("Starting 🍅\n")
+    print("Starting 🍅")
     while True:
         session_count += 1
         print(format_report(stats.data, session_count - 1))
